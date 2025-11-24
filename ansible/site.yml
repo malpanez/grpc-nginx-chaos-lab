@@ -1,0 +1,12 @@
+---
+- name: Configure gRPC backend apps
+  hosts: grpc_apps
+  become: true
+  roles:
+    - grpc_app
+
+- name: Configure NGINX gRPC gateway
+  hosts: nginx_gateway
+  become: true
+  roles:
+    - nginx_gateway

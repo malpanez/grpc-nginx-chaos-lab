@@ -1,0 +1,94 @@
+---
+- name: Ensure Python crypto deps for TLS tasks
+  ansible.builtin.package:
+    name:
+      - python3-cryptography
+    state: present
+
+- name: Ensure NGINX is installed
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Create NGINX conf.d directory
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy global HTTP tuning config
+  ansible.builtin.template:
+    src: 00-global-tuning.conf.j2
+    dest: /etc/nginx/conf.d/00-global-tuning.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Deploy gRPC gateway config
+  ansible.builtin.template:
+    src: 10-grpc-gateway.conf.j2
+    dest: /etc/nginx/conf.d/10-grpc-gateway.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Ensure directory for TLS certificates
+  ansible.builtin.file:
+    path: /etc/nginx/ssl
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Generate private key for NGINX gateway
+  community.crypto.openssl_privatekey:
+    path: /etc/nginx/ssl/nginx-gateway.key
+    type: RSA
+    size: 2048
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Generate self-signed certificate for NGINX gateway (with SAN)
+  ansible.builtin.command: >
+    openssl req -x509 -new -nodes -sha256
+    -key /etc/nginx/ssl/nginx-gateway.key
+    -out /etc/nginx/ssl/nginx-gateway.crt
+    -days 365
+    -subj "/CN=nginx-gateway.local"
+    -addext "subjectAltName=DNS:nginx-gateway.local,IP:{{ ansible_host }}"
+  args:
+    creates: /etc/nginx/ssl/.nginx-gateway.san-{{ ansible_host }}
+  notify: reload nginx
+
+- name: Mark SAN certificate generation
+  ansible.builtin.file:
+    path: /etc/nginx/ssl/.nginx-gateway.san-{{ ansible_host }}
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Deploy TLS gRPC gateway server block
+  ansible.builtin.template:
+    src: 11-grpc-gateway-tls.conf.j2
+    dest: /etc/nginx/conf.d/11-grpc-gateway-tls.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Test NGINX configuration
+  ansible.builtin.command: nginx -t
+  register: nginx_test
+  changed_when: false
+
+- name: Reload NGINX
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

@@ -1,0 +1,65 @@
+---
+# Chaos role for gRPC backends behind NGINX.
+# It simulates typical SRE failure scenarios: nodes down, slow backends, and recovery.
+
+- name: Ensure iproute2 is installed (for tc/netem)
+  ansible.builtin.package:
+    name: iproute2
+    state: present
+  become: true
+  tags: [always]
+
+# 1) Stop only one backend (keep the others healthy)
+#    Use tag: chaos_kill_one
+- name: Stop gRPC app on the first backend in the group
+  ansible.builtin.systemd:
+    name: grpc_app.service
+    state: stopped
+  when: inventory_hostname == (groups['grpc_apps'] | sort | first)
+  become: true
+  tags: [chaos_kill_one]
+
+# 2) Stop ALL backends (simulate full backend outage)
+#    Use tag: chaos_kill_all
+- name: Stop gRPC app on all backends
+  ansible.builtin.systemd:
+    name: grpc_app.service
+    state: stopped
+  become: true
+  tags: [chaos_kill_all]
+
+# 3) Make one backend slow using tc netem (inject latency)
+#    Use tag: chaos_slow_one
+- name: Add 300ms delay to the first backend via tc netem
+  ansible.builtin.command:
+    cmd: tc qdisc add dev eth0 root netem delay 300ms 50ms distribution normal
+  args:
+    warn: false
+  when: inventory_hostname == (groups['grpc_apps'] | sort | first)
+  register: tc_result
+  # rc=2 usually means "qdisc already exists" – we don't treat it as fatal
+  failed_when: tc_result.rc not in [0, 2]
+  become: true
+  tags: [chaos_slow_one]
+
+# 4) Reset netem (remove artificial latency) on all backends
+#    Use tag: chaos_reset_net
+- name: Remove netem qdisc if present
+  ansible.builtin.command:
+    cmd: tc qdisc del dev eth0 root
+  args:
+    warn: false
+  register: tc_del
+  failed_when: tc_del.rc not in [0, 2]
+  become: true
+  tags: [chaos_reset_net]
+
+# 5) Restore gRPC service on all backends
+#    Use tag: chaos_restore
+- name: Start gRPC app on all backends
+  ansible.builtin.systemd:
+    name: grpc_app.service
+    state: started
+    enabled: true
+  become: true
+  tags: [chaos_restore]

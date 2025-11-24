@@ -1,0 +1,14 @@
+# Terraform state and secrets
+terraform/.terraform*
+terraform/terraform.tfstate*
+terraform/terraform.tfvars
+
+# Ansible artifact logs
+artifacts/
+
+# Local temp files
+*.log
+*.retry
+*.swp
+*.swo
+__pycache__/

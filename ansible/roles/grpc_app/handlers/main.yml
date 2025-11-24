@@ -1,0 +1,5 @@
+---
+- name: restart grpc app
+  ansible.builtin.systemd:
+    name: grpc_app.service
+    state: restarted

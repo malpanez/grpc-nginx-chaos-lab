@@ -1,0 +1,8 @@
+---
+# Chaos scenarios for gRPC backends behind the NGINX gateway
+
+- name: Run chaos experiments against gRPC backends
+  hosts: grpc_apps
+  become: true
+  roles:
+    - chaos_grpc_backends

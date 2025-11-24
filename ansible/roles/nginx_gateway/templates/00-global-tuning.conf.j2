@@ -1,0 +1,33 @@
+# Global HTTP tuning and log formats for NGINX (inside http {})
+
+# KV-style log format – easy to parse by Splunk or simple scripts
+log_format grpc_combined
+  'remote_addr=$remote_addr '
+  'user=$remote_user '
+  'time_local="$time_local" '
+  'request="$request" '
+  'request_id=$request_id '
+  'status=$status '
+  'rt=$request_time '
+  'urt=$upstream_response_time '
+  'upstream="$upstream_addr"';
+
+# Main access log for gRPC traffic
+access_log /var/log/nginx/grpc_access.log grpc_combined;
+
+# We keep sendfile / tcp_nopush / tcp_nodelay in the default nginx.conf
+# to avoid duplicate directives and conflicts.
+
+# Keep connections alive for better performance
+keepalive_timeout   65s;
+keepalive_requests  1000;
+
+# Sensible HTTP request limits and timeouts
+client_max_body_size        4m;
+client_body_timeout         60s;
+client_header_timeout       15s;
+reset_timedout_connection   on;
+
+# HTTP/2 tuning (valid for NGINX 1.26.x)
+http2_max_concurrent_streams 128;
+# http2_idle_timeout is obsolete in recent versions – we do not use it here

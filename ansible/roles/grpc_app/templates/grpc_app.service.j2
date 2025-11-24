@@ -1,0 +1,13 @@
+[Unit]
+Description=gRPC demo application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={{ grpc_app_root }}
+ExecStart={{ grpc_app_venv }}/bin/python {{ grpc_app_root }}/server.py --port {{ grpc_app_port }} --app-name {{ grpc_app_name | default(inventory_hostname) }}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

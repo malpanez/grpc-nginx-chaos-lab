@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+import argparse
+import logging
+from concurrent import futures
+
+import grpc
+from grpc_reflection.v1alpha import reflection
+from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+
+import helloworld_pb2
+import helloworld_pb2_grpc
+
+
+class Greeter(helloworld_pb2_grpc.GreeterServicer):
+    def __init__(self, app_name: str):
+        self.app_name = app_name
+
+    def SayHello(self, request, context):
+        name = request.name or "world"
+        metadata = dict(context.invocation_metadata())
+        request_id = metadata.get("x-request-id", "unknown")
+        logging.info("Received request name=%s request_id=%s", name, request_id)
+        message = f"Hello from {self.app_name}, {name}"
+        return helloworld_pb2.HelloReply(message=message)
+
+
+def serve(port: int, app_name: str) -> None:
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+
+    helloworld_pb2_grpc.add_GreeterServicer_to_server(
+        Greeter(app_name),
+        server,
+    )
+
+    health_servicer = health.HealthServicer()
+    health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set(helloworld_pb2.DESCRIPTOR.services_by_name["Greeter"].full_name, health_pb2.HealthCheckResponse.SERVING)
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+
+    service_name = helloworld_pb2.DESCRIPTOR.services_by_name["Greeter"].full_name
+    reflection.enable_server_reflection(
+        (service_name, reflection.SERVICE_NAME, health.SERVICE_NAME),
+        server,
+    )
+
+    listen_addr = f"[::]:{port}"
+    server.add_insecure_port(listen_addr)
+    logging.info("Starting gRPC server on %s for app '%s'", listen_addr, app_name)
+
+    server.start()
+    server.wait_for_termination()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default={{ grpc_app_port }})
+    parser.add_argument("--app-name", type=str, default="{{ grpc_app_name | default('grpc-app') }}")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    args = parse_args()
+    serve(args.port, args.app_name)

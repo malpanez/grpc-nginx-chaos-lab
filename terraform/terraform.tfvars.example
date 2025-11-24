@@ -1,0 +1,25 @@
+# Example terraform.tfvars - adjust to your environment
+# Compatible with Proxmox VE 9.x and bpg/proxmox provider ~> 0.87.0
+
+# Proxmox API
+pm_api_url          = "https://pve:8006/"
+pm_api_token_id     = "terraform@pve!token-name"
+pm_api_token_secret = "CHANGE_ME"
+pm_node             = "pve"
+
+# LXC template and storage
+lxc_ostemplate = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+lxc_storage    = "local-lvm"
+
+# Inject this SSH public key into each container
+ssh_public_key_file = "~/.ssh/id_ed25519.pub"
+
+# Networking
+lxc_bridge       = "vmbr0"
+lxc_gateway      = "192.168.100.1"
+lxc_network_cidr = "/24"
+
+# Static IPs for the lab
+nginx_ip      = "192.168.100.10"
+grpc_app_1_ip = "192.168.100.11"
+grpc_app_2_ip = "192.168.100.12"

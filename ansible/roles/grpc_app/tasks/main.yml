@@ -1,0 +1,103 @@
+---
+- name: Ensure base packages for Python and gRPC
+  ansible.builtin.package:
+    name: "{{ grpc_app_packages }}"
+    state: present
+
+- name: Download grpc_health_probe binary
+  ansible.builtin.get_url:
+    url: "https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/{{ grpc_health_probe_version }}/grpc_health_probe-{{ grpc_health_probe_arch }}"
+    dest: /usr/local/bin/grpc_health_probe
+    mode: "0755"
+    force: false
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: "{{ grpc_app_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create Python virtualenv
+  ansible.builtin.command:
+    cmd: "python3 -m venv {{ grpc_app_venv }}"
+    creates: "{{ grpc_app_venv }}/bin/activate"
+  tags: ['venv']
+
+- name: Install Python dependencies in venv
+  ansible.builtin.pip:
+    name:
+      - grpcio
+      - grpcio-tools
+      - grpcio-reflection
+      - grpcio-health-checking
+    virtualenv: "{{ grpc_app_venv }}"
+    virtualenv_command: "python3 -m venv"
+    state: present
+  notify: restart grpc app
+
+- name: Copy helloworld.proto
+  ansible.builtin.template:
+    src: helloworld.proto.j2
+    dest: "{{ grpc_app_root }}/helloworld.proto"
+    owner: root
+    group: root
+    mode: "0644"
+  register: helloworld_proto
+
+- name: Check if generated Python gRPC stubs exist
+  ansible.builtin.stat:
+    path: "{{ grpc_app_root }}/helloworld_pb2_grpc.py"
+  register: grpc_stub_stat
+
+- name: Generate gRPC Python code from proto
+  ansible.builtin.command:
+    cmd: >
+      {{ grpc_app_venv }}/bin/python -m grpc_tools.protoc
+      -I . --python_out=. --grpc_python_out=. helloworld.proto
+    chdir: "{{ grpc_app_root }}"
+  when: helloworld_proto.changed or not grpc_stub_stat.stat.exists
+  notify: restart grpc app
+
+- name: Deploy gRPC server application
+  ansible.builtin.template:
+    src: server.py.j2
+    dest: "{{ grpc_app_root }}/server.py"
+    owner: root
+    group: root
+    mode: "0755"
+    force: true
+  notify: restart grpc app
+
+- name: Deploy systemd service for gRPC app
+  ansible.builtin.template:
+    src: grpc_app.service.j2
+    dest: /etc/systemd/system/grpc_app.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart grpc app
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start gRPC app service
+  ansible.builtin.systemd:
+    name: grpc_app.service
+    state: started
+    enabled: true
+
+- name: Check gRPC health locally
+  ansible.builtin.command:
+    cmd: "/usr/local/bin/grpc_health_probe -addr=127.0.0.1:{{ grpc_app_port }}"
+  register: health_probe
+  failed_when: false
+  changed_when: false
+
+- name: Restart gRPC app if health check fails
+  ansible.builtin.systemd:
+    name: grpc_app.service
+    state: restarted
+  when: health_probe.rc != 0
